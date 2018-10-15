@@ -1,3 +1,5 @@
+#include <utility>
+
 //
 // Created by KASHUN SHUM on 2018/10/14.
 //
@@ -24,51 +26,13 @@ void VideoProcessor::dontDisplay() {
     windowNameOutput.clear();
 }
 
-bool VideoProcessor::setInput(const std::string &filename) {
-    fnumber = 0;
-
-    capture.release();
-    images.clear();
-
-    return capture.open(filename);
-}
-
-bool VideoProcessor::setInput(int id) {
-    fnumber = 0;
-
-    capture.release();
-    images.clear();
-
-    return capture.open(id);
-}
-
-
-bool VideoProcessor::setInput(const std::vector<std::string> &imgs) {
-    fnumber = 0;
-
-    capture.release();
-
-    images = imgs;
-    itImg = images.begin();
-
-    return true;
-}
-
 void VideoProcessor::setDelay(int d) {
     delay = d;
-}
-
-
-double VideoProcessor::getFrameRate() {
-    if (!images.empty()) return 0;
-    double r = capture.get(CV_CAP_PROP_FPS);
-    return r;
 }
 
 void VideoProcessor::callProcess() {
     callIt = true;
 }
-
 
 void VideoProcessor::dontCallProcess() {
     callIt = false;
@@ -79,59 +43,58 @@ void VideoProcessor::setFrameProcessor(FrameProcessor frameProcessorPtr) {
     callProcess();
 }
 
-void VideoProcessor::stopIt() {
-    stop = true;
+void VideoProcessor::stop() {
+    shouldStop = true;
+    stopNotifier.notify_all();
 }
 
-bool VideoProcessor::isStopped() {
-    return stop;
-}
+bool VideoProcessor::isReady() const noexcept { return camera ? camera->good() : false; }
 
-bool VideoProcessor::isOpened() {
-    return capture.isOpened() || !images.empty();
-}
+long VideoProcessor::getFrameNumber() const noexcept { return camera ? camera->frameId() : 0l; }
 
-long VideoProcessor::getFrameNumber() {
-    return images.empty() ? static_cast<long>(capture.get(CV_CAP_PROP_POS_FRAMES)) : static_cast<long>(itImg -
-                                                                                                       images.begin());
-}
+double VideoProcessor::getFrameRate() const noexcept { return camera ? camera->frameRate() : 0.0; }
 
+std::future<void> VideoProcessor::run() {
+#ifndef NDEBUG
+    if (!isReady())
+        throw std::runtime_error("VideoProcessor State is Incomplete!");
+    if (executing.exchange(true))
+        throw std::runtime_error("A processor is already running");
+#else
+    executing = true;
+#endif
+    shouldStop = false;
+    // Fork-off a thread to do actual work
+    return std::async(std::launch::async, [this]() {
+        Mat frame, output;
+        std::mutex mt; // idle mutex
+        while (!shouldStop) {
+            if (!camera->getNextFrame(frame) || (frameToStop >= 0 && getFrameNumber() == frameToStop))
+                break;
 
-void VideoProcessor::run() {
+            if (windowNameInput.length() != 0)
+                imshow(windowNameInput, frame);
 
-    Mat frame;
+            if (callIt) {
+                if (frameProcessor)
+                    frameProcessor(frame, output);
+            } else {
+                output = frame;
+            }
 
-    Mat output;
+            if (windowNameOutput.length() != 0)
+                cv::imshow(windowNameOutput, output);
 
-
-    if (!isOpened()) {
-        std::cout << "fail" << std::endl;
-        return;
-    }
-    stop = false;
-    while (!isStopped()) {
-
-        if (!readNextFrame(frame))
-            break;
-
-        if (windowNameInput.length() != 0)
-            imshow(windowNameInput, frame);
-
-        if (callIt) {
-            if (frameProcessor)
-                frameProcessor(frame, output);
-            fnumber++;
-        } else {
-            output = frame;
+            // IDLE
+            if (delay > 0) {
+                std::unique_lock<std::mutex> lk(mt);
+                stopNotifier.wait_for(lk, std::chrono::milliseconds(delay), [this](){ return shouldStop.load(); });
+            }
         }
-
-        if (windowNameOutput.length() != 0)
-            cv::imshow(windowNameOutput, output);
-
-        if (delay >= 0 && cv::waitKey(delay) >= 0)
-            stopIt();
-
-        if (frameToStop >= 0 && getFrameNumber() == frameToStop)
-            stopIt();
-    }
+        executing = false;
+    });
 }
+
+void VideoProcessor::setInput(std::shared_ptr<ICamera> newCamera) noexcept { camera = std::move(newCamera); }
+
+bool VideoProcessor::isExecuting() const noexcept { return executing; }

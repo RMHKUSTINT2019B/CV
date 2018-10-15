@@ -7,11 +7,11 @@
 
 using namespace cv;
 
-void processFrame(Mat &img, Mat &out);
+void processFrame(const Mat &img, Mat &out);
 
 //TODO 添加帧的处理函数
 // 对视频的每帧做Canny算子边缘检测（just example）
-void canny(Mat &img, Mat &out) {
+void canny(const Mat &img, Mat &out) {
     // 先要把每帧图像转化为灰度图
     cvtColor(img, out, CV_BGR2GRAY);
 

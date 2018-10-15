@@ -8,50 +8,18 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include "FrameProcessor.h"
-#include <string>
+#include "Camera.h"
+#include <memory>
+#include <atomic>
+#include <future>
+#include <condition_variable>
 
 using namespace cv;
 
 class VideoProcessor {
-private:
-    VideoCapture capture;
-
-    FrameProcessor frameProcessor{nullptr};
-
-    bool callIt;
-
-    std::string windowNameInput;
-
-    std::string windowNameOutput;
-
-    int delay;
-
-    long fnumber;
-
-    long frameToStop{};
-
-    bool stop;
-
-    std::vector<std::string> images;
-    std::vector<std::string>::const_iterator itImg;
-
-    bool readNextFrame(Mat &frame) {
-        if (images.empty())
-            return capture.read(frame);
-        else {
-            if (itImg != images.end()) {
-                frame = imread(*itImg);
-                itImg++;
-                return frame.data != nullptr;
-            }
-        }
-
-    }
-
 public:
-    // 默认设置 digits(0), frameToStop(-1),
-    VideoProcessor() : callIt(false), delay(-1), fnumber(0), stop(false) {}
-
+    // 默认设置 digits(0)
+    VideoProcessor() : callIt(false), delay(-1), shouldStop(false), frameToStop(-1) {}
 
     void displayInput(const std::string &wt);
 
@@ -59,41 +27,40 @@ public:
 
     void dontDisplay();
 
-
-    bool setInput(const std::string &filename);
-
-    bool setInput(int id);
-
-    bool setInput(const std::vector<std::string> &imgs);
-
-
-    void setDelay(int d);
-
-
-    double getFrameRate();
-
-
-    void callProcess();
-
-
-    void dontCallProcess();
-
+    void setInput(std::shared_ptr<ICamera> newCamera) noexcept;
 
     void setFrameProcessor(FrameProcessor frameProcessor);
 
+    void setDelay(int d);
 
-    void stopIt();
+    void callProcess();
 
+    void dontCallProcess();
 
-    bool isStopped();
+    void stop();
 
+    bool isExecuting() const noexcept;
 
-    bool isOpened();
+    bool isReady() const noexcept;
 
+    double getFrameRate() const noexcept;
 
-    long getFrameNumber();
+    long getFrameNumber() const noexcept;;
 
+    std::future<void> run();
 
-    void run();
+private:
+    std::shared_ptr<ICamera> camera{nullptr};
 
+    FrameProcessor frameProcessor{nullptr};
+
+    std::atomic_bool callIt, shouldStop, executing{false};
+
+    std::string windowNameInput, windowNameOutput;
+
+    int delay;
+
+    long frameToStop;
+
+    std::condition_variable stopNotifier;
 };
