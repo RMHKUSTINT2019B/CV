@@ -1,20 +1,20 @@
-#include <utility>
-
 //
 // Created by KASHUN SHUM on 2018/10/14.
 //
 
+#include <utility>
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
 #include "VideoProcessor.h"
-#include <iostream>
 
 using namespace cv;
 
-void VideoProcessor::displayInput(const std::string &wt) {
+void VideoProcessor::displayInput(const std::string& wt) {
     windowNameInput = wt;
     namedWindow(windowNameInput);
 }
 
-void VideoProcessor::displayOutput(const std::string &wn) {
+void VideoProcessor::displayOutput(const std::string& wn) {
     windowNameOutput = wn;
     namedWindow(windowNameOutput);
 }
@@ -88,7 +88,7 @@ std::future<void> VideoProcessor::run() {
             // IDLE
             if (delay > 0) {
                 std::unique_lock<std::mutex> lk(mt);
-                stopNotifier.wait_for(lk, std::chrono::milliseconds(delay), [this](){ return shouldStop.load(); });
+                stopNotifier.wait_for(lk, std::chrono::milliseconds(delay), [this]() { return shouldStop.load(); });
             }
         }
         executing = false;

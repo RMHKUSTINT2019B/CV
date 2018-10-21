@@ -14,12 +14,12 @@ LogicalCamera::LogicalCamera(int id) : mVideoCapture(id) {
         throwCameraOpenFailure();
 }
 
-LogicalCamera::LogicalCamera(const std::string &filename) : mVideoCapture(filename) {
+LogicalCamera::LogicalCamera(const std::string& filename) : mVideoCapture(filename) {
     if (!mVideoCapture.isOpened())
         throwCameraOpenFailure();
 }
 
-bool LogicalCamera::getNextFrame(cv::Mat &frame) { return mVideoCapture.read(frame); }
+bool LogicalCamera::getNextFrame(cv::Mat& frame) { return mVideoCapture.read(frame); }
 
 bool LogicalCamera::good() const noexcept { return mVideoCapture.isOpened(); }
 
@@ -27,9 +27,9 @@ long LogicalCamera::frameId() const noexcept { return static_cast<long>(mVideoCa
 
 double LogicalCamera::frameRate() const noexcept { return mVideoCapture.get(cv::CAP_PROP_FPS); }
 
-MockCamera::MockCamera(const std::vector<std::string> &imgs) : images(imgs) { itImg = images.begin(); }
+MockCamera::MockCamera(const std::vector<std::string>& imgs) : images(imgs) { itImg = images.begin(); }
 
-bool MockCamera::getNextFrame(cv::Mat &frame) {
+bool MockCamera::getNextFrame(cv::Mat& frame) {
     if (itImg != images.end()) {
         frame = cv::imread(*itImg);
         itImg++;

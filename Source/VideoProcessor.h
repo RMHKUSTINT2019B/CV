@@ -4,9 +4,6 @@
 
 #pragma once
 
-#include <opencv2/core/core.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/imgproc/imgproc.hpp>
 #include "FrameProcessor.h"
 #include "Camera.h"
 #include <memory>
@@ -21,9 +18,9 @@ public:
     // 默认设置 digits(0)
     VideoProcessor() : callIt(false), delay(-1), shouldStop(false), frameToStop(-1) {}
 
-    void displayInput(const std::string &wt);
+    void displayInput(const std::string& wt);
 
-    void displayOutput(const std::string &wn);
+    void displayOutput(const std::string& wn);
 
     void dontDisplay();
 
