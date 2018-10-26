@@ -3,6 +3,16 @@
 #include "Base.h"
 #include <libusb.h>
 #include <memory>
+#include <exception>
+
+class USBError : public std::exception {
+public:
+    explicit USBError(int err) : _ErrorNo(err) {}
+    const char* what() const noexcept override;
+    auto ErrorNo() const noexcept { return _ErrorNo; }
+private:
+    int _ErrorNo = 0;
+};
 
 struct _USBDvInsRec {};
 

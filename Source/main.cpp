@@ -10,7 +10,7 @@
 
 bool is_interesting(libusb_device* pDevice);
 int main() {
-    /*VideoProcessor processor;
+    VideoProcessor processor;
     // 打开摄像头
     processor.setInput(std::make_shared<LogicalCamera>(0));
 
@@ -27,9 +27,9 @@ int main() {
     processor.stop();
     task.wait();
     //TODO 加入识别function
-    return 0;*/
+    return 0;
 
-    try {
+    /*try {
         libusb_device** list;
         libusb_device* found = NULL;
         ssize_t cnt = libusb_get_device_list(NULL, &list);
@@ -60,7 +60,7 @@ int main() {
     catch (std::exception& exp) {
         std::cout << exp.what() << std::endl;
     }
-    return 0;
+    return 0;*/
 }
 bool is_interesting(libusb_device* pDevice) {
     libusb_device_descriptor desc {};

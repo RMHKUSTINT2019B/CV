@@ -42,3 +42,5 @@ _USBDvInsRec Install(int vendor, int product, IDriver* (* loader)(libusb_device*
     Map()[static_cast<uint64_t>(vendor) << 32 | product] = loader;
     return _USBDvInsRec();
 }
+
+const char* USBError::what() const noexcept { return libusb_error_name(_ErrorNo); }

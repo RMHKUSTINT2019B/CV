@@ -9,6 +9,7 @@
 #include <utility>
 #include <list>
 #include <iostream>
+#include <algorithm>
 
 #define EP_DATA_IN        (0x2|LIBUSB_ENDPOINT_IN)
 #define EP_DATA_OUT       (0x2|LIBUSB_ENDPOINT_OUT)
@@ -38,7 +39,7 @@ namespace {
 
         int ControlTransfer(int requestType, int request, int value, int index, unsigned char* buffer, int length) {
             if (auto s = libusb_control_transfer(devh, requestType, request, value, index, buffer, length, 500); s<0)
-                throw std::runtime_error("USB Control Transfer COM Error");
+                throw USBError(s);
             else
                 return s;
         }
@@ -63,54 +64,56 @@ namespace {
             int size;
             int current = 0;
             std::promise<void> promise{};
-            bool Satisfy() { return size == current; }
+            bool Satisfy() { return size==current; }
         };
 
         mutable std::mutex _ReadTaskLock, _CircularBufferLock;
         mutable std::list<_RdT> _PendingReadTasks;
 
-        void ClearReadTaskWithError() {
+        void ClearReadTaskWithError(int error) {
             std::lock_guard<std::mutex> lk{_ReadTaskLock};
-            for (auto& x : _PendingReadTasks) {
-                x.promise.set_exception(std::make_exception_ptr(std::runtime_error("Img Transfer Error")));
-            }
+            for (auto& x : _PendingReadTasks)
+                x.promise.set_exception(std::make_exception_ptr(USBError(error)));
             _PendingReadTasks.clear();
         }
 
         static void LIBUSB_CALL cb_img(struct libusb_transfer* transfer);
 
+        void ProcessRecvBuffer(int received) {
+            auto processed = 0;
+            {
+                std::lock_guard<std::mutex> lk{_ReadTaskLock};
+                if (!_PendingReadTasks.empty()) {
+                    for (auto& x : _PendingReadTasks) {
+                        while (processed<received && !x.Satisfy())
+                            x.buffer[x.current++] = recvbuf[processed++];
+                        if (processed==received) break;
+                    }
+                    while (_PendingReadTasks.front().Satisfy()) {
+                        _PendingReadTasks.front().promise.set_value();
+                        _PendingReadTasks.pop_front();
+                        if (_PendingReadTasks.empty()) break;
+                    }
+                }
+            }
+            {
+                std::lock_guard<std::mutex> lk{_CircularBufferLock};
+                while (processed<received) {
+                    _StoreBuffer[(_BufferEnd++) & ((1 << 16)-1)] = recvbuf[processed++];
+                    ++(_BufferSize);
+                }
+            }
+        }
+
     };
 
     void LIBUSB_CALL CH341::cb_img(struct libusb_transfer* transfer) {
         auto _this = reinterpret_cast<CH341*>(transfer->user_data);
-        fflush(stdout);
         if (transfer->status==LIBUSB_TRANSFER_COMPLETED) {
-            auto processed = 0;
-            {
-                std::lock_guard<std::mutex> lk{_this->_ReadTaskLock};
-                if (!_this->_PendingReadTasks.empty()) {
-                    for (auto& x : _this->_PendingReadTasks) {
-                        while (processed<transfer->actual_length && !x.Satisfy())
-                            x.buffer[x.current++] = _this->recvbuf[processed++];
-                        if (processed==transfer->actual_length) break;
-                    }
-                    while (_this->_PendingReadTasks.front().Satisfy()) {
-                        _this->_PendingReadTasks.front().promise.set_value();
-                        _this->_PendingReadTasks.pop_front();
-                        if (_this->_PendingReadTasks.empty()) break;
-                    }
-                }
-            }
-            {
-                std::lock_guard<std::mutex> lk{_this->_CircularBufferLock};
-                while (processed<transfer->actual_length) {
-                    _this->_StoreBuffer[(_this->_BufferEnd++) & ((1 << 16)-1)] = _this->recvbuf[processed++];
-                    ++(_this->_BufferSize);
-                }
-            }
+            _this->ProcessRecvBuffer(transfer->actual_length);
         }
         else {
-            _this->ClearReadTaskWithError();
+            _this->ClearReadTaskWithError(transfer->status);
             libusb_free_transfer(transfer);
         }
         libusb_submit_transfer(_this->recv_bulk_transfer);
@@ -127,7 +130,7 @@ namespace {
         auto fut = record.promise.get_future();
         {
             std::lock_guard<std::mutex> lk{_CircularBufferLock};
-            while (_BufferSize > 0 && !record.Satisfy()) {
+            while (_BufferSize>0 && !record.Satisfy()) {
                 record.buffer[record.current++] = _StoreBuffer[_BufferBegin++];
                 --_BufferSize;
             }
@@ -135,7 +138,8 @@ namespace {
         if (!record.Satisfy()) {
             std::lock_guard<std::mutex> lk{_ReadTaskLock};
             _PendingReadTasks.push_back(std::move(record));
-        } else {
+        }
+        else {
             record.promise.set_value();
         }
         return fut;
@@ -144,26 +148,25 @@ namespace {
     std::future<void> CH341::WriteAsync(const void* buffer, int size) {
         auto data = reinterpret_cast<uint8_t*>(const_cast<void*>(buffer));
         libusb_transfer* send_bulk_transfer = libusb_alloc_transfer(0);
-        if (!send_bulk_transfer) throw std::runtime_error("libusb_alloc_transfer error");
+        if (!send_bulk_transfer) throw std::bad_alloc();
         auto promise = new std::promise<void>();
         try {
             auto fut = promise->get_future();
             libusb_fill_bulk_transfer(send_bulk_transfer, devh, EP_DATA_OUT, data, size,
                     [](libusb_transfer* transfer) {
-                        reinterpret_cast<std::promise<void>*>(transfer->user_data)->set_value();
+                        auto promise = reinterpret_cast<std::promise<void>*>(transfer->user_data);
+                        promise->set_value();
+                        delete promise;
                         libusb_free_transfer(transfer);
                     }, promise, 0);
-            if (libusb_submit_transfer(send_bulk_transfer)<0) {
+            if (auto s = libusb_submit_transfer(send_bulk_transfer); s<0) {
                 libusb_free_transfer(send_bulk_transfer);
-                throw std::runtime_error("libusb_submit_transfer error");
+                throw USBError(s);
             }
             return fut;
         }
         catch (...) {
-            try {
-                delete promise;
-            }
-            catch (...) { }
+            delete promise;
             throw;
         }
     }
@@ -224,12 +227,12 @@ namespace {
 
     CH341::CH341(libusb_device* dev) {
         try {
-            if (libusb_open(dev, &devh)<0) throw std::runtime_error("Device Open Failure");
-            if (libusb_claim_interface(devh, 0)<0) throw std::runtime_error("usb_claim_interface error");
+            if (auto s = libusb_open(dev, &devh); s<0) throw USBError(s);
+            if (auto s = libusb_claim_interface(devh, 0); s<0) throw USBError(s);
             DevInit();
             StartInputListener();
         }
-        catch (std::runtime_error&) {
+        catch (...) {
             libusb_release_interface(devh, 0);
             libusb_close(devh);
         }
@@ -248,12 +251,12 @@ namespace {
 
     void CH341::StartInputListener() {
         recv_bulk_transfer = libusb_alloc_transfer(0);
-        if (!recv_bulk_transfer) throw std::runtime_error("libusb_alloc_transfer error");
+        if (!recv_bulk_transfer) throw std::bad_alloc();
         libusb_fill_bulk_transfer(recv_bulk_transfer, devh, EP_DATA_IN, recvbuf, sizeof(recvbuf), cb_img, this, 0);
-        if (libusb_submit_transfer(recv_bulk_transfer)<0) {
+        if (auto s = libusb_submit_transfer(recv_bulk_transfer); s<0) {
             libusb_free_transfer(recv_bulk_transfer);
             recv_bulk_transfer = nullptr;
-            throw std::runtime_error("libusb_submit_transfer error");
+            throw USBError(s);
         }
     }
 
