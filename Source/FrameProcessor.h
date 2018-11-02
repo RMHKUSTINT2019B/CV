@@ -7,6 +7,5 @@
 #include <opencv2/core/mat.hpp>
 #include <functional>
 
-using FrameProcessor = std::function<void(const cv::Mat& input, cv::Mat& output)>;
-
-void canny(const cv::Mat& img, cv::Mat& out);
+using FrameProcessor = std::function<cv::Mat (const cv::Mat& input)>;
+cv::Mat canny(const cv::Mat& img);

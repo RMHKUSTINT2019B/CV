@@ -11,14 +11,16 @@ void processFrame(const Mat& img, Mat& out);
 
 //TODO 添加帧的处理函数
 // 对视频的每帧做Canny算子边缘检测（just example）
-void canny(const Mat& img, Mat& out) {
+Mat canny(const Mat& img) {
+    cv::Mat out, blur, edged;
     // 先要把每帧图像转化为灰度图
     cvtColor(img, out, CV_BGR2GRAY);
-
+    GaussianBlur(out, blur, Size(5, 5), 0, 0);
     // 调用Canny函数
-    Canny(out, out, 100, 200);
+    Canny(out, edged, 50, 255);
     // 对像素进行翻转
-    threshold(out, out, 230, 255, THRESH_BINARY_INV);
+    threshold(edged, out, 230, 255, THRESH_BINARY_INV);
+    return out;
 }
 
 /*

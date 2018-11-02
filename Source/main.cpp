@@ -7,7 +7,7 @@
 #include "FrameProcessor.h"
 #include "HAL/USB.h"
 #include "HAL/SerialBus.h"
-
+cv::Mat ProcessFrame(const cv::Mat& input);
 bool is_interesting(libusb_device* pDevice);
 int main() {
     VideoProcessor processor;
@@ -15,12 +15,12 @@ int main() {
     processor.setInput(std::make_shared<LogicalCamera>(0));
 
     // 分别为输入和输出
-    processor.displayInput("Input ");
+    //processor.displayInput("Input ");
     processor.displayOutput("Output ");
 
     processor.setDelay(1000. / processor.getFrameRate());
 
-    processor.setFrameProcessor(canny);
+    processor.setFrameProcessor(ProcessFrame);
     // 开始帧处理过程
     auto task = processor.run();
     waitKey();

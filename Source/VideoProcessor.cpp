@@ -77,7 +77,7 @@ std::future<void> VideoProcessor::run() {
 
             if (callIt) {
                 if (frameProcessor)
-                    frameProcessor(frame, output);
+                    output = frameProcessor(frame);
             } else {
                 output = frame;
             }
